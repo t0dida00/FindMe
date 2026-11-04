@@ -1,0 +1,7 @@
+Config/Secrets.xcconfig
+FindMe.xcodeproj/
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.DS_Store

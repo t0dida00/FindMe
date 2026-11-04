@@ -1,0 +1,20 @@
+// Shared build settings for the FindMe target.
+// Secrets and per-developer signing live in Secrets.xcconfig (gitignored), included at the end so it overrides these.
+// Copy Secrets.example.xcconfig -> Secrets.xcconfig and fill in your values.
+
+SUPABASE_URL =
+SUPABASE_ANON_KEY =
+
+// Signing
+PRODUCT_BUNDLE_IDENTIFIER = com.findme.app
+DEVELOPMENT_TEAM =
+
+// FREE_TEAM = YES  -> free Apple Personal Team: no Push / Sign in with Apple entitlements,
+//                     app hides the Apple button and skips APNs registration at runtime.
+// FREE_TEAM = NO   -> full setup (paid Apple Developer Program).
+FREE_TEAM = NO
+FINDME_ENTITLEMENTS_NO = FindMe/Resources/FindMe.entitlements
+FINDME_ENTITLEMENTS_YES = FindMe/Resources/FindMe-FreeTeam.entitlements
+CODE_SIGN_ENTITLEMENTS = $(FINDME_ENTITLEMENTS_$(FREE_TEAM))
+
+#include? "Secrets.xcconfig"
