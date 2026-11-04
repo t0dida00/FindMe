@@ -35,6 +35,8 @@ python3 -I supabase/tests/check_server.py   # live Supabase vs migrations, read-
 EXTRA_SQL=/tmp/x.sql bash supabase/tests/run.sh   # also run an ad-hoc SQL check after schema_check.sql
 cd server && go vet ./... && go test -race ./...  # Go unit tests (rules, handlers)
 bash server/scripts/test-integration.sh    # game rules against a throwaway Postgres with every migration
+RACE= LOAD_PLAYERS=400 LOAD_GAMES=10 LOAD_DURATION=20s bash server/scripts/test-integration.sh -run TestLoad
+                                           # HTTP load test (latency per route, 0 5xx); TestStress* = races + retries
 ```
 
 `supabase/tests/run.sh` prints one `ok …` / `FAIL …` line per check and exits 1 on any `FAIL`.

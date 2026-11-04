@@ -279,6 +279,10 @@ final class GameViewModel {
         }
         do {
             let r = try await API.redeemCode(hintId: hint.id, code: code)
+            if r.ok, r.photoUploaded == true { // a retry: the photo already went out
+                await refresh()
+                return .message(String(localized: "Đang chờ duyệt"))
+            }
             if r.ok, let sid = r.submissionId, let deadline = r.uploadDeadline, let prefix = r.uploadPathPrefix {
                 await refresh()
                 return .reserved(ProofTarget(submissionId: sid, deadline: deadline, pathPrefix: prefix))

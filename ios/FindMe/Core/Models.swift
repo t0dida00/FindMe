@@ -355,6 +355,8 @@ struct RedeemResult: Decodable, Sendable {
     let submissionId: UUID?
     let uploadDeadline: Date?
     let uploadPathPrefix: String?
+    /// True when this was a retry by the holder and the proof photo is already sent (waiting for review).
+    let photoUploaded: Bool?
     let attemptsBeforeLock: Int?
     let lockedUntil: Date?
 }
