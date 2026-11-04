@@ -1,15 +1,10 @@
 import Foundation
 
-/// Client for the Find Me! Go API (github.com/t0dida00/FindMe-Go). Every call carries the Supabase
-/// access token (the Go API verifies it), and the JSON uses the same snake_case shapes as Supabase's
-/// REST API, so the app's models decode it unchanged. Server errors come back as
-/// `{"error":{"code":"game_full"}}` and become `GoAPI.Failure`, which `AppError` maps to messages
-/// exactly like SQL error codes.
+/// Client for the Find Me! server (Go API, github.com/t0dida00/FindMe-Go): every game read and write
+/// goes here. Each call carries the Supabase access token (the server verifies it); JSON is
+/// snake_case. Server errors come back as `{"error":{"code":"game_full"}}` and become
+/// `GoAPI.Failure`, which `AppError` turns into a message.
 enum GoAPI {
-    /// Which backend serves data. Set GO_API_URL in Config/Secrets.xcconfig to use the Go API; leave it
-    /// empty to talk to Supabase directly (the shipped behaviour).
-    static var isEnabled: Bool { AppConfig.goAPIURL != nil }
-
     /// A failed call: the server's stable error code (`game_full`, `not_found`…) and HTTP status.
     struct Failure: LocalizedError, Sendable {
         let code: String
@@ -82,33 +77,6 @@ enum GoAPI {
 
     static func write(_ method: String, _ path: String) async throws {
         try await send(method, path)
-    }
-
-    /// Reads may fall back to Supabase when the Go API is unreachable or broken (network error or
-    /// 5xx). Writes never do: a retried write could apply twice.
-    static func shouldFallBack(_ error: Error) -> Bool {
-        if error is URLError { return true }
-        if let f = error as? Failure { return f.status >= 500 || f.status == 0 }
-        return false
-    }
-
-    /// Runs `go` against the Go API when enabled, else (or if it is unreachable) `supabase`.
-    static func read<T>(_ go: () async throws -> T, supabase: () async throws -> T) async throws -> T {
-        guard isEnabled else { return try await supabase() }
-        do { return try await go() } catch where shouldFallBack(error) {
-            print("GoAPI read failed, falling back to Supabase: \(error)")
-            return try await supabase()
-        }
-    }
-
-    /// Go first; nil when Go is off or unreachable (the caller then runs its Supabase code).
-    /// Rule errors (4xx) are thrown as they are.
-    static func tryRead<T>(_ go: () async throws -> T) async throws -> T? {
-        guard isEnabled else { return nil }
-        do { return try await go() } catch where shouldFallBack(error) {
-            print("GoAPI read failed, falling back to Supabase: \(error)")
-            return nil
-        }
     }
 
     /// A single row that may not exist: 404 → nil.

@@ -1,6 +1,7 @@
 import Foundation
 
-/// Reads SUPABASE_URL / SUPABASE_ANON_KEY that Config/*.xcconfig injects into Info.plist.
+/// Reads SUPABASE_URL / SUPABASE_ANON_KEY (sign-in) and GO_API_URL (the game server) that
+/// Config/*.xcconfig injects into Info.plist.
 enum AppConfig {
     static let authCallbackURL = URL(string: "findme://login-callback")!
     static let urlScheme = "findme"
@@ -14,7 +15,7 @@ enum AppConfig {
         return url
     }
 
-    /// GO_API_URL from Config/Secrets.xcconfig, e.g. http://Your-Mac.local:8080. Empty = Supabase only.
+    /// GO_API_URL from Config/Secrets.xcconfig, e.g. http://Your-Mac.local:8080 (required).
     static var goAPIURL: URL? {
         guard let raw = Bundle.main.object(forInfoDictionaryKey: "GO_API_URL") as? String,
               let url = URL(string: raw.trimmingCharacters(in: .whitespaces)),
@@ -35,7 +36,7 @@ enum AppConfig {
         (Bundle.main.object(forInfoDictionaryKey: "FINDME_FREE_TEAM") as? String)?.uppercased() == "YES"
     }
 
-    static var isConfigured: Bool { supabaseURL != nil && supabaseAnonKey != nil }
+    static var isConfigured: Bool { supabaseURL != nil && supabaseAnonKey != nil && goAPIURL != nil }
 
     /// Invite link that opens the app straight into the join flow (F-09 / F-16).
     static func joinLink(code: String) -> URL {

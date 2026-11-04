@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import Supabase
 import UIKit
 
 /// Owns all state of one opened game. Every Realtime INSERT on `game_events` (filtered by game_id),
@@ -67,48 +66,13 @@ final class GameViewModel {
 
     // MARK: Lifecycle
 
-    /// Subscribes to Realtime and keeps listening until the surrounding task is cancelled.
+    /// Loads the game, then follows its live events until the surrounding task is cancelled.
     func run() async {
         await refresh()
-        if GoAPI.isEnabled {
-            await runGoStream()
-            return
-        }
-        let channel = Supa.client.channel("game-\(gameId.uuidString.lowercased())")
-        let inserts = channel.postgresChange(InsertAction.self, schema: "public", table: "game_events",
-                                             filter: .eq("game_id", value: gameId.uuidString.lowercased()))
-        let statuses = channel.statusChange
-        do { try await channel.subscribeWithError() } catch {
-            print("Realtime subscribe failed: \(error)")
-        }
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { [weak self] in
-                for await action in inserts {
-                    let type = action.record["type"]?.stringValue ?? ""
-                    let payload = action.record["payload"]?.objectValue ?? [:]
-                    let info = EventInfo(type: type,
-                                         hintOrder: payload["hint_order"]?.intValue,
-                                         winnerName: payload["winner_name"]?.stringValue,
-                                         userId: payload["user_id"]?.stringValue.flatMap(UUID.init(uuidString:)),
-                                         reason: payload["reason"]?.stringValue)
-                    await self?.handle(info)
-                }
-            }
-            group.addTask { [weak self] in
-                var wasSubscribed = false
-                for await status in statuses {
-                    let subscribed = status == .subscribed
-                    await self?.setRealtime(subscribed)
-                    // Re-subscribed after a drop → resync (N-12).
-                    if subscribed && wasSubscribed == false { await self?.refresh() }
-                    if subscribed { wasSubscribed = true } else if status == .unsubscribed { wasSubscribed = false }
-                }
-            }
-        }
-        await Supa.client.removeChannel(channel)
+        await runGoStream()
     }
 
-    // MARK: Go API realtime (Server-Sent Events, replaces Supabase Realtime when GO_API_URL is set)
+    // MARK: Realtime (Server-Sent Events from the server)
 
     /// Listens to GET /v1/games/{id}/stream until the task is cancelled: reconnects with
     /// Last-Event-ID (the server replays missed events), refetches on `resync` and after a reconnect,
@@ -165,7 +129,7 @@ final class GameViewModel {
         setRealtime(false)
     }
 
-    /// A game_events row (JSON) → the fields `handle` uses (same as the Supabase Realtime record).
+    /// A game_events row (JSON) → the fields `handle` uses.
     nonisolated static func eventInfo(json: String) -> EventInfo? {
         guard let obj = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
               let type = obj["type"] as? String else { return nil }

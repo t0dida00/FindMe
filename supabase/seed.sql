@@ -4,6 +4,8 @@
 --  Chỉ dùng cho môi trường dev/staging. `supabase db reset` tự nạp file này (config.toml →
 --  [db.seed]). Muốn nạp tay: psql "$DATABASE_URL" -f supabase/seed.sql
 --  Chạy lại được: dữ liệu demo cũ (user id bắt đầu bằng de000000-) bị xóa trước.
+--  Database chỉ lưu dữ liệu (20261105000000_storage_only.sql): file này tự ghi mọi thứ server Go
+--  ghi khi chơi thật (profile, dòng 'host' của quản trò, mã đã băm bcrypt, khu vực làm tròn 2 số).
 --
 --  - 10 quản trò + 40 người chơi demo (không đăng nhập được: không có email/identity).
 --  - Tuân thủ luật "1 người, 1 cuộc săn" (20261103000500_one_active_hunt.sql): mỗi quản trò
@@ -38,6 +40,10 @@ select ('de000000-0000-0000-0000-' || lpad((10 + n)::text, 12, '0'))::uuid,
                 'Hải Yến','Quang Huy','Diệu Linh','Văn Toàn','Kim Ngân'])[1 + (n - 1) % 20])
   from generate_series(1, 40) n;
 
+insert into profiles (id, display_name)
+select id, raw_user_meta_data ->> 'display_name' from auth.users where id::text like 'de000000-%'
+on conflict (id) do nothing;
+
 do $$
 declare
   hosts   uuid[] := array(select ('de000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid
@@ -62,9 +68,11 @@ begin
     values (hosts[i], titles[i],
             'Game demo quanh ' || areas[i] || '. Xin mã tham gia từ quản trò.',
             v_grand, 'VND', true,
-            lats[i] + (random() - 0.5) * 0.02, lngs[i] + (random() - 0.5) * 0.02, areas[i],
-            now() - make_interval(days => 20 + i))
+            round((lats[i] + (random() - 0.5) * 0.02)::numeric, 2), round((lngs[i] + (random() - 0.5) * 0.02)::numeric, 2),
+            areas[i], now() - make_interval(days => 20 + i))
     returning id into g_id;
+    insert into game_participants (game_id, user_id, role, joined_at)
+    values (g_id, hosts[i], 'host', now() - make_interval(days => 20 + i));
     -- Game đã kết thúc: đặt trạng thái trước khi thêm người chơi, để luật "1 người, 1 cuộc săn"
     -- không tính game này (người chơi của nó đang ở cuộc săn khác).
     if i >= 8 then update games set status = 'completed' where id = g_id; end if;
@@ -84,7 +92,7 @@ begin
       insert into hints (game_id, hint_order, title, prize, answer_lat, answer_lng, code_hash)
       values (g_id, k, 'Chặng ' || k, (1 + floor(random() * 4)) * 100000,
               lats[i] + (random() - 0.5) * 0.016, lngs[i] + (random() - 0.5) * 0.016,
-              extensions.crypt(normalize_code('DEMO' || i || 'X' || k), extensions.gen_salt('bf')))
+              extensions.crypt('DEMO' || i || 'X' || k, extensions.gen_salt('bf')))
       returning id into h_id;
       insert into hint_items (hint_id, item_order, type, text_content)
       values (h_id, 1, 'text', 'Gợi ý demo cho chặng ' || k || ' của "' || titles[i] || '".');

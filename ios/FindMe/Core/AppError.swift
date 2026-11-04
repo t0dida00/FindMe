@@ -1,8 +1,8 @@
 import Foundation
 import Supabase
 
-/// Maps Postgres `raise exception '<code>'` texts, redeem_code error codes and transport errors
-/// to friendly (localized, Vietnamese-first) messages.
+/// Maps the server's error codes (`{"error":{"code":"game_full"}}`, redeem answers) and transport
+/// errors to friendly (localized, Vietnamese-first) messages.
 enum AppError {
     static func message(for error: Error) -> String {
         if let urlError = error as? URLError {
@@ -21,19 +21,8 @@ enum AppError {
             if let m = message(code: go.code) { return m }
             return goMessage(code: go.code, status: go.status)
         }
-        if let pg = error as? PostgrestError {
-            if let m = message(code: pg.message) { return m }
-            // e.g. 'new row … violates check constraint "games_public_needs_area"'
-            for code in knownCodes where pg.message.contains(code) {
-                if let m = message(code: code) { return m }
-            }
-            return pg.message
-        }
         if let auth = error as? AuthError {
             return String(localized: "Đăng nhập thất bại: \(auth.localizedDescription)")
-        }
-        if let storage = error as? StorageError {
-            return String(localized: "Lỗi tải ảnh: \(storage.message)")
         }
         let text = String(describing: error)
         for code in knownCodes where text.contains(code) {
@@ -67,7 +56,7 @@ enum AppError {
         "participant_not_found", "wrong_code", "code_entry_locked", "code_in_use",
         "upload_window_expired", "game_not_finished", "not_game_player", "invalid_stars", "games_public_needs_area", "already_in_active_game",
         "game_full", "max_players_below_count", "last_hint", "hint_prize_over_grand", "grand_prize_below_hint", "game_not_open", "game_closed",
-        "duplicate key value",
+        "duplicate", "reward_not_found", "profile_not_found", "storage_unavailable", "upload_failed",
     ]
 
     static func message(code raw: String) -> String? {
@@ -110,11 +99,12 @@ enum AppError {
         case "code_entry_locked": return String(localized: "Bạn đang bị khóa nhập mã.")
         case "code_in_use": return String(localized: "Có người đang xác minh mã này")
         case "upload_window_expired": return String(localized: "Đã quá thời hạn tải ảnh.")
-        default:
-            if code.contains("duplicate key value") {
-                return String(localized: "Thứ tự này đã được dùng. Hãy chọn số khác.")
-            }
-            return nil
+        case "duplicate": return String(localized: "Thứ tự này đã được dùng. Hãy chọn số khác.")
+        case "reward_not_found": return String(localized: "Không tìm thấy phần thưởng.")
+        case "profile_not_found": return String(localized: "Không tìm thấy hồ sơ.")
+        case "storage_unavailable": return String(localized: "Máy chủ chưa bật lưu ảnh. Vui lòng thử lại sau.")
+        case "upload_failed": return String(localized: "Tải ảnh thất bại.")
+        default: return nil
         }
     }
 }

@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Chạy 2 migration + kịch bản một game hoàn chỉnh trên Postgres cục bộ (không cần Docker/Supabase).
+# Chạy mọi migration trên Postgres cục bộ (không cần Docker/Supabase), nạp seed demo, rồi kiểm tra
+# database chỉ còn lưu dữ liệu (schema_check.sql). Luật chơi được test trong server Go:
+# bash server/scripts/test-integration.sh
 # Cần: initdb/pg_ctl/psql (Homebrew postgresql@15+). Dùng: bash supabase/tests/run.sh
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 TMP="$(mktemp -d)"
 PORT="${PORT:-54329}"
-export PGHOST=127.0.0.1 PGPORT="$PORT" PGUSER=postgres
+export PGHOST=127.0.0.1 PGPORT="$PORT" PGUSER=postgres PGOPTIONS="-c client_min_messages=warning"
 
 initdb -D "$TMP/data" -U postgres -A trust >/dev/null
 pg_ctl -D "$TMP/data" -o "-p $PORT -k '' -h 127.0.0.1" -l "$TMP/pg.log" start >/dev/null
@@ -38,17 +40,15 @@ psql -d t -v ON_ERROR_STOP=1 -q \
   -f "$DIR/../migrations/20261103002100_open_join.sql" \
   -f "$DIR/../migrations/20261103002200_open_join_closed.sql" \
   -f "$DIR/../migrations/20261104000100_game_events_notify.sql" \
-  -f "$DIR/../migrations/20261104000200_push_outbox.sql" 2>&1 | grep -v -e wal_level -e HINT || true
-psql -d t -f "$DIR/game_flow.sql" 2>&1 | grep -v -e '^SET' -e '^INSERT' -e '^UPDATE' -e '^CREATE' -e '^GRANT' -e '^RESET' -e '^Output' -e '^$'
+  -f "$DIR/../migrations/20261104000200_push_outbox.sql" \
+  -f "$DIR/../migrations/20261105000000_storage_only.sql" 2>&1 | grep -v -e wal_level -e HINT || true
+# Seed demo, rồi kiểm tra schema
+psql -d t -v ON_ERROR_STOP=1 -q -f "$DIR/../seed.sql"
+OUT="$(psql -d t -v ON_ERROR_STOP=1 -q -f "$DIR/schema_check.sql")"
+echo "$OUT"
 # Kịch bản tạm (agent tester): EXTRA_SQL=/đường/dẫn/file.sql bash supabase/tests/run.sh
-# Chạy sau game_flow.sql trên cùng DB (người dùng 0…a/b/c đã có; 0…d đã bị xóa).
 if [ -n "${EXTRA_SQL:-}" ]; then
   echo "=== EXTRA_SQL: $EXTRA_SQL"
   psql -d t -f "$EXTRA_SQL" 2>&1 | grep -v -e '^SET' -e '^RESET' -e '^$'
 fi
-# Các lỗi "hint_title_required", "hint_location_locked", "hint_order_locked", "game_not_editable", "row-level security" (hint_items của hint đã giải), "permission denied for table code_attempts/host_ratings/games", "not_game_player", "invalid_stars",
-# "not_game_host", "game_full", "max_players_below_count", "game_has_no_hints", "last_hint", "hint_prize_over_grand", "grand_prize_below_hint", "game_not_open" và "game_closed" là lỗi MONG ĐỢI (kiểm tra RLS/quyền/giới hạn).
-
-# Seed demo (10 cuộc săn quanh TP.HCM) + Globe
-psql -d t -v ON_ERROR_STOP=1 -q -f "$DIR/../seed.sql"
-psql -d t -At -f "$DIR/globe.sql"
+if echo "$OUT" | grep -q '^FAIL'; then exit 1; fi

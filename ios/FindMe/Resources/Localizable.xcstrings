@@ -1455,23 +1455,6 @@
         }
       }
     },
-    "Chưa cấu hình Supabase" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Supabase not configured"
-          }
-        },
-        "vi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Chưa cấu hình Supabase"
-          }
-        }
-      }
-    },
     "Chưa cấu hình Supabase (xem ios/README.md)." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1485,6 +1468,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Chưa cấu hình Supabase (xem ios/README.md)."
+          }
+        }
+      }
+    },
+    "Chưa cấu hình máy chủ" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server not configured"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chưa cấu hình máy chủ"
           }
         }
       }
@@ -3910,6 +3910,23 @@
         }
       }
     },
+    "Không tìm thấy hồ sơ." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profile not found."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không tìm thấy hồ sơ."
+          }
+        }
+      }
+    },
     "Không tìm thấy lượt nộp mã." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3940,6 +3957,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Không tìm thấy người chơi này."
+          }
+        }
+      }
+    },
+    "Không tìm thấy phần thưởng." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reward not found."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không tìm thấy phần thưởng."
           }
         }
       }
@@ -4505,23 +4539,6 @@
         }
       }
     },
-    "Lỗi tải ảnh: %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Upload error: %@"
-          }
-        },
-        "vi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lỗi tải ảnh: %@"
-          }
-        }
-      }
-    },
     "MAP" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4552,6 +4569,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ME"
+          }
+        }
+      }
+    },
+    "Máy chủ chưa bật lưu ảnh. Vui lòng thử lại sau." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photo storage is not enabled on the server. Please try again later."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Máy chủ chưa bật lưu ảnh. Vui lòng thử lại sau."
           }
         }
       }
@@ -7275,19 +7309,19 @@
         }
       }
     },
-    "Tạo file ios/Config/Secrets.xcconfig với SUPABASE_URL và SUPABASE_ANON_KEY rồi build lại. Xem ios/README.md." : {
+    "Tạo file ios/Config/Secrets.xcconfig với SUPABASE_URL, SUPABASE_ANON_KEY và GO_API_URL rồi build lại. Xem ios/README.md." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Create ios/Config/Secrets.xcconfig with SUPABASE_URL and SUPABASE_ANON_KEY, then rebuild. See ios/README.md."
+            "value" : "Create ios/Config/Secrets.xcconfig with SUPABASE_URL, SUPABASE_ANON_KEY and GO_API_URL, then build again. See ios/README.md."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tạo file ios/Config/Secrets.xcconfig với SUPABASE_URL và SUPABASE_ANON_KEY rồi build lại. Xem ios/README.md."
+            "value" : "Tạo file ios/Config/Secrets.xcconfig với SUPABASE_URL, SUPABASE_ANON_KEY và GO_API_URL rồi build lại. Xem ios/README.md."
           }
         }
       }

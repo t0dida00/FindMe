@@ -4,11 +4,14 @@ Native SwiftUI app (iOS 17+, Swift 6 language mode) for live treasure hunts. Vie
 source language and English is the second language. One app covers both roles: you can host one hunt
 and play in another.
 
-All game rules live in Postgres RPCs (`supabase/migrations/*.sql`). The app only:
-- calls RPCs (`join_game`, `redeem_code`, `attach_photo`, `review_submission`, `create_hint`, …),
-- reads tables that RLS allows (`games`, `game_participants`, `submissions`, `rewards`, `game_events`, staff-only `hints` / `hint_items`),
-- uploads to Storage (`proofs`, `hint-media`),
-- listens to Realtime INSERTs on `public.game_events` (filtered by `game_id`) and refetches state on each event, when the app returns to the foreground and when the network reconnects.
+All game rules live in the Go server (`server/`, [FindMe-Go](https://github.com/t0dida00/FindMe-Go)).
+The app only:
+- calls the server's `/v1/...` endpoints through `GoAPI` (`Core/GameAPI.swift`, `Core/HostAPI.swift`),
+  with the Supabase access token,
+- signs in with Supabase Auth (the only direct Supabase use),
+- uploads and shows photos through Storage URLs the server signs (`/v1/uploads`, `/v1/file-url`),
+- follows the game's Server-Sent Events stream (`/v1/games/{id}/stream`) and refetches state on each
+  event, on `resync`, when the app returns to the foreground and when the network reconnects.
 
 The player's GPS is never sent to the server. The device location is only shown on the journey map,
 and permission is requested only when that map opens.
@@ -17,7 +20,8 @@ and permission is requested only when that map opens.
 
 - Xcode 16+ (tested with Xcode 27.2 / Swift 6.4)
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.46+ (`brew install xcodegen`)
-- A Supabase project with both migrations applied and `pg_cron` enabled
+- A Supabase project with every migration applied (Auth + Storage), and the Go server running
+  (`server/scripts/dev.sh` on your Mac for development)
 
 SPM dependency: `supabase-swift` pinned to exactly **2.55.6**.
 
@@ -34,6 +38,7 @@ Edit `Config/Secrets.xcconfig`:
 // "//" starts a comment in xcconfig files, so put $() between the slashes:
 SUPABASE_URL = https:/$()/YOUR-PROJECT-REF.supabase.co
 SUPABASE_ANON_KEY = eyJ...            // anon / publishable key (never the service_role key)
+GO_API_URL = http:/$()/Your-Mac-Name.local:8080   // the game server (scutil --get LocalHostName)
 
 DEVELOPMENT_TEAM = ABCDE12345
 PRODUCT_BUNDLE_IDENTIFIER = com.findme.app
@@ -41,9 +46,9 @@ FREE_TEAM = NO
 ```
 
 `Config/App.xcconfig` holds the defaults and includes `Secrets.xcconfig` last, so your values win.
-The values are exposed to the app through the Info.plist keys `SUPABASE_URL`, `SUPABASE_ANON_KEY` and
-`FINDME_FREE_TEAM`. If the Supabase values are missing, the app shows a "Chưa cấu hình Supabase"
-screen instead of crashing.
+The values are exposed to the app through the Info.plist keys `SUPABASE_URL`, `SUPABASE_ANON_KEY`,
+`GO_API_URL` and `FINDME_FREE_TEAM`. If one is missing, the app shows a "Chưa cấu hình máy chủ" screen
+instead of crashing.
 
 ### Paid Apple Developer Program (full setup)
 
@@ -92,21 +97,20 @@ Steps:
 - **Email**: enable it for development OTP sign-in. Make sure the email template contains the
   `{{ .Token }}` code, because the app asks the user to type the 6-digit code.
 
-**Realtime**: the migration adds `public.game_events` to the `supabase_realtime` publication. Check
-that it appears under Database → Publications.
+**Realtime** comes from the Go server (Server-Sent Events), not Supabase Realtime.
 
 **Storage**: the migrations create the private buckets `proofs` and `hint-media` and the public bucket
-`avatars`.
+`avatars`. There are no Storage policies: the server decides who may upload or see a photo and signs
+the URL (it needs `SUPABASE_SERVICE_ROLE_KEY` in `server/.env`).
 
 ## 3. Push notifications (APNs)
 
 The app asks for notification permission when you join or create a hunt. It then registers for remote
-notifications and sends the hex APNs token with `rpc register_device_token(p_token, 'ios')`.
+notifications and sends the hex APNs token to `POST /v1/me/device-tokens`.
 
-Sending is server-side and **not part of this app**. An Edge Function or Database Webhook on
-`game_events` should read `device_tokens` and call APNs.
-- Create an APNs **Auth Key (.p8)** in Certificates, Identifiers & Profiles → Keys. Store the Key ID,
-  Team ID and the .p8 contents as Edge Function secrets.
+Sending is done by the Go server's push worker (`PUSH_ENABLED=true` in `server/.env`).
+- Create an APNs **Auth Key (.p8)** in Certificates, Identifiers & Profiles → Keys. Put the Key ID,
+  Team ID and the .p8 contents in `server/.env` (`APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_KEY_FILE`).
 - Debug builds use the **sandbox** APNs host (`aps-environment = development`).
 - Put `"game_id": "<uuid>"` at the top level of the push payload. Tapping the notification then opens
   that game.
@@ -139,9 +143,9 @@ ios/
   Config/Secrets.example.xcconfig
   FindMe/
     App/        FindMeApp (root, URL handling), AppDelegate (APNs, notification taps), AppRouter (deep links)
-    Core/       Supa (client + JSON coding), API + HostAPI (every RPC/table call), Models, AppError
-                (Postgres error → Vietnamese message), ImageCompressor, SignedURLCache, PushManager,
-                ConnectivityMonitor, Formatters, AppConfig
+    Core/       GoAPI (server client), API + HostAPI (every server call), Supa (sign-in + JSON coding),
+                Models, AppError (server error code → message), ImageCompressor, SignedURLCache,
+                PushManager, ConnectivityMonitor, Formatters, AppConfig
     Features/
       Auth/     AuthStore (Apple nonce, Google OAuth, email OTP), SignInView
       Home/     HomeView (my games with role, Join, Create), JoinGameSheet, CreateGameView + GameFormFields
@@ -168,5 +172,5 @@ string contains a count). Users switch language in iOS Settings → Find Me! →
 Check coverage with `bash scripts/check-strings.sh`. It builds the app and fails if a string in code
 is missing from the catalog, has no English translation, or is no longer used.
 
-Push notifications are localized on the device too. The `push` Edge Function sends APNs `loc-key` /
+Push notifications are localized on the device too. The server's push worker sends APNs `loc-key` /
 `loc-args`, and iOS resolves them from the `push.*` entries in `Localizable.xcstrings`.

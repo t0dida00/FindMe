@@ -60,9 +60,9 @@ struct RootView: View {
 struct ConfigMissingView: View {
     var body: some View {
         ContentUnavailableView {
-            Label("Chưa cấu hình Supabase", systemImage: "gearshape.2")
+            Label("Chưa cấu hình máy chủ", systemImage: "gearshape.2")
         } description: {
-            Text("Tạo file ios/Config/Secrets.xcconfig với SUPABASE_URL và SUPABASE_ANON_KEY rồi build lại. Xem ios/README.md.")
+            Text("Tạo file ios/Config/Secrets.xcconfig với SUPABASE_URL, SUPABASE_ANON_KEY và GO_API_URL rồi build lại. Xem ios/README.md.")
         }
     }
 }

@@ -13,57 +13,62 @@ duplicate them here.
 
 | Path | What |
 | --- | --- |
-| `supabase/migrations/` | Postgres schema. **All game rules live here** as RPCs, RLS, triggers and `pg_cron` jobs |
-| `supabase/functions/push` | Edge Function: Database Webhook on `game_events` INSERT → APNs |
-| `supabase/functions/purge-proofs` | Edge Function: daily cleanup of old proof photos |
-| `supabase/tests/` | Local Postgres test that plays a whole game (no Supabase or Docker needed), plus `check_contract.py` (app ↔ SQL) and `check_server.py` (live server vs migrations) |
+| `supabase/migrations/` | Postgres schema: tables, keys, check constraints, indexes. **Data only**: no functions, triggers, RLS policies or cron (`20261105000000_storage_only.sql` removed them) |
+| `supabase/functions/` | Legacy Edge Functions (`push`, `purge-proofs`), replaced by the Go push worker and purge job; don't deploy them next to the Go server (pushes would go out twice) |
+| `supabase/tests/` | `run.sh` applies every migration + seed to a local Postgres and checks the database only stores data (`schema_check.sql`); `check_contract.py` (app ↔ Go server routes and error codes); `check_server.py` (live Supabase vs migrations) |
 | `.claude/agents/tester.md` | The `tester` subagent: runs every check above and tries the cases of the latest change |
-| `server/` | Go HTTP API (DDD: domain → application → infrastructure/interfaces) in front of the same Postgres. **Its own git repo** ([FindMe-Go](https://github.com/t0dida00/FindMe-Go), module `github.com/t0dida00/FindMe-Go`), ignored by this repo; commit and push it separately. See server/README.md |
+| `server/` | Go HTTP API (DDD: domain → application → infrastructure/interfaces). **All game rules live here** (`internal/domain/hunt` pure rules, `internal/application/hunt` use cases), plus realtime (SSE), push (APNs), timers and photo URL signing. **Its own git repo** ([FindMe-Go](https://github.com/t0dida00/FindMe-Go), module `github.com/t0dida00/FindMe-Go`), ignored by this repo; commit and push it separately. See server/README.md |
 | `ios/` | SwiftUI app (iOS 17+, Swift 6, strict concurrency) for both players and hosts |
 | `ios/project.yml` | XcodeGen spec. The `.xcodeproj` is generated, so edit `project.yml` instead |
 
 ## Commands
 
 ```bash
-bash supabase/tests/run.sh                 # schema test; needs Homebrew postgresql (initdb/pg_ctl/psql)
+bash supabase/tests/run.sh                 # schema test (data only + seed); needs Homebrew postgresql (initdb/pg_ctl/psql)
 cd ios && xcodegen generate                # after adding/removing files or editing project.yml
 xcodebuild -project ios/FindMe.xcodeproj -scheme FindMe \
   -destination 'generic/platform=iOS Simulator' -configuration Debug build CODE_SIGNING_ALLOWED=NO
 bash ios/scripts/check-strings.sh          # build + check Localizable.xcstrings coverage (see i18n)
 bash ios/scripts/install-device.sh         # build, install and launch on the paired iPhone (DEVICE=<UDID> to pick one)
-python3 -I supabase/tests/check_contract.py # app RPCs/tables/error codes vs migrations (offline)
+python3 -I supabase/tests/check_contract.py # app API calls/error codes vs Go server routes (offline)
 python3 -I supabase/tests/check_server.py   # live Supabase vs migrations, read-only with the anon key: lists missing migrations
-EXTRA_SQL=/tmp/x.sql bash supabase/tests/run.sh   # also run an ad-hoc SQL scenario after game_flow.sql
-cd server && go vet ./... && go test -race ./...  # Go API unit tests
-bash server/scripts/test-integration.sh    # Go API against a throwaway Postgres with every migration
+EXTRA_SQL=/tmp/x.sql bash supabase/tests/run.sh   # also run an ad-hoc SQL check after schema_check.sql
+cd server && go vet ./... && go test -race ./...  # Go unit tests (rules, handlers)
+bash server/scripts/test-integration.sh    # game rules against a throwaway Postgres with every migration
 ```
 
-In `supabase/tests/run.sh` output, `permission denied for table code_attempts` and `not_game_host` at
-the end are expected.
+`supabase/tests/run.sh` prints one `ok …` / `FAIL …` line per check and exits 1 on any `FAIL`.
 
 ## Rules of thumb
 
-- **After every update (SQL or iOS), run the `tester` agent** (Agent tool, `subagent_type: "tester"`) with a
+- **After every update (Go server, SQL or iOS), run the `tester` agent** (Agent tool, `subagent_type: "tester"`) with a
   short description of what changed, and fix what it reports before telling the user the work is done.
   Report its result (PASS/FAIL per check, missing server migrations) in the reply.
 
 - **After every change to the iOS app, reinstall it on the real iPhone** with
   `bash ios/scripts/install-device.sh` once the build passes, so the user can try it right away. If no
   iPhone is paired (or signing fails), say so in the reply instead of skipping silently. Backend-only
-  changes (SQL, Edge Functions) don't need a reinstall.
+  changes (Go server, SQL) don't need a reinstall.
 - **Go server (`server/`)**: dependencies point inward (domain has no framework imports; use cases
-  depend on domain ports; postgres/http are adapters). It calls the SQL functions through
-  `postgres.DB.AsUser`, so it never duplicates game rules. A new SQL error code needs no Go change
-  (rule codes pass through), but add it to `statusFor` in `internal/interfaces/httpapi/errors.go` if it
-  is not a 409. Secrets go in `server/.env` (gitignored).
-- **Game logic goes in SQL, not Swift.** The app only calls RPCs, reads tables that RLS allows,
-  uploads to Storage and listens to Realtime on `game_events`. Add a new migration file; never edit
-  `20261103000000_treasure_hunt.sql` (it is the verbatim schema from the plan).
-- New migrations must also be listed in `supabase/tests/run.sh`, and new behaviour should get a
-  scenario in `supabase/tests/game_flow.sql`.
-- Errors raised in SQL as `raise exception '<code>'` need a matching message in
-  `ios/FindMe/Core/AppError.swift` (both `knownCodes` and `message(code:)`).
-- Every RPC/table call from iOS goes through `Core/GameAPI.swift` (player) or `Core/HostAPI.swift` (staff).
+  depend on domain ports; postgres/http are adapters). Each use case runs in one transaction through
+  the `hunt.Store` port; the postgres adapter only reads, writes and locks (no rules, no SQL functions).
+  Who may do or see what is decided in Go too (`Allowed`, role checks). Add a rule code that is not a
+  409 to `statusFor` in `internal/interfaces/httpapi/errors.go`. Secrets go in `server/.env` (gitignored;
+  `SUPABASE_SERVICE_ROLE_KEY` signs photo upload/download URLs).
+- **Game logic goes in the Go server, never in SQL or Swift.** The database only stores data: a new
+  migration adds or changes tables, columns, keys, check constraints and indexes, never functions,
+  triggers, RLS policies or cron. Never edit `20261103000000_treasure_hunt.sql` (verbatim schema from the
+  plan). The app asks the server and shows the answer.
+- New migrations must also be listed in `supabase/tests/run.sh`. New behaviour gets a Go test: a unit
+  test in `server/internal/domain/hunt` for a pure rule and/or a scenario in
+  `server/internal/infrastructure/postgres/integration_test.go`.
+- Rule errors the server returns (`shared.Rule("<code>")`) need a matching message in
+  `ios/FindMe/Core/AppError.swift` (both `knownCodes` and `message(code:)`); `check_contract.py` checks it.
+- Every server call from iOS goes through `Core/GameAPI.swift` (player) or `Core/HostAPI.swift` (staff),
+  via `GoAPI` (`GO_API_URL` in `ios/Config/Secrets.xcconfig` is required). Supabase is used for sign-in
+  only; photos go up and down through URLs the server signs (`API.newUpload`/`upload`, `SignedURLCache`).
+- Applying `20261105000000_storage_only.sql` to the live Supabase cuts off app builds that still call
+  Supabase directly: apply it only once the Go server runs at a fixed address for every app build.
 - The player's GPS never leaves the device.
 - `ios/Config/Secrets.xcconfig` is gitignored; never commit keys, `.p8` files or the service_role key.
 - UI colors, fonts and spacing come from the tokens in `ios/FindMe/Shared/Theme.swift` (its header documents
@@ -113,10 +118,10 @@ and Vietnamese (`vi`). The user picks the language in iOS Settings → Find Me! 
     catalog, entries without English or Vietnamese, and stale entries.
 - **Info.plist strings** (permission prompts, display name): `ios/FindMe/Resources/InfoPlist.xcstrings`,
   with both `vi` and `en` values. Keep the `en` value in sync with `project.yml`.
-- **Push notifications** are localized on the device: `supabase/functions/push` sends APNs
-  `loc-key` / `title-loc-key` / `loc-args`, and iOS looks the key up in `Localizable.xcstrings`.
-  Those keys are `push.*` (with explicit `vi` and `en` values). To add or change a push, update the
-  function and the `push.*` entry together; an app build without the key shows the raw key. `loc-args`
+- **Push notifications** are localized on the device: the server's push worker
+  (`server/internal/domain/notify`) sends APNs `loc-key` / `title-loc-key` / `loc-args`, and iOS looks
+  the key up in `Localizable.xcstrings`. Those keys are `push.*` (with explicit `vi` and `en` values).
+  To add or change a push, update `notify` and the `push.*` entry together; an app build without the key shows the raw key. `loc-args`
   are strings, so use `%@` (positional `%1$@`, `%2$@` when there are several).
 - **Server error codes** are stable English identifiers (`wrong_code`); only the app turns them into text.
 - A prize (game grand prize, hint milestone, reward) is money **or** an item (gift name):

@@ -2,8 +2,8 @@ import Observation
 import SwiftUI
 import UIKit
 
-/// Opens right after a successful redeem_code: camera + visible countdown to upload_deadline,
-/// then compress → upload to proofs/<prefix><uuid>.jpg (retrying until the deadline) → attach_photo.
+/// Opens right after a correct code: camera + visible countdown to upload_deadline, then compress →
+/// upload to the slot the server picks in proofs/<game>/<me>/ (retrying until the deadline) → attach.
 @MainActor @Observable
 final class ProofCaptureModel {
     enum Phase: Equatable {
@@ -21,11 +21,11 @@ final class ProofCaptureModel {
     let camera = CameraController()
     var cameraState: CameraController.SetupResult?
     private var jpeg: Data?
-    private let objectPath: String
+    /// Asked once and reused by every retry, so a retry after a lost response is idempotent.
+    private var slot: API.UploadSlot?
 
     init(target: ProofTarget) {
         self.target = target
-        self.objectPath = target.pathPrefix + UUID().uuidString.lowercased() + ".jpg"
     }
 
     var isPastDeadline: Bool { Date() >= target.deadline }
@@ -76,8 +76,15 @@ final class ProofCaptureModel {
             attempt += 1
             phase = .uploading(attempt: attempt)
             do {
-                try await withDeadline(target.deadline) { [objectPath] in
-                    try await API.uploadProof(path: objectPath, data: jpeg)
+                let slot: API.UploadSlot
+                if let cached = self.slot {
+                    slot = cached
+                } else {
+                    slot = try await API.newUpload(kind: "proof", gameId: gameIdFromPrefix)
+                    self.slot = slot
+                }
+                try await withDeadline(target.deadline) {
+                    try await API.upload(slot, data: jpeg)
                 }
                 uploaded = true
             } catch {
@@ -92,11 +99,12 @@ final class ProofCaptureModel {
                 : .failed(lastError.map(AppError.message(for:)) ?? String(localized: "Tải ảnh thất bại."))
             return
         }
+        guard let path = slot?.path else { return }
         phase = .attaching
-        // attach_photo is tiny; retry a few times on transport errors (server re-checks the deadline).
+        // attaching is tiny; retry a few times on transport errors (server re-checks the deadline).
         for i in 0..<4 {
             do {
-                try await API.attachPhoto(submissionId: target.submissionId, path: objectPath)
+                try await API.attachPhoto(submissionId: target.submissionId, path: path)
                 let mine = try? await API.mySubmissions(gameId: gameIdFromPrefix)
                 if mine?.first(where: { $0.id == target.submissionId })?.status == .expired {
                     phase = .expired

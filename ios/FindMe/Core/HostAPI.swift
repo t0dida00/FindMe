@@ -1,126 +1,75 @@
 import Foundation
-import Supabase
 
-/// Host / co-host operations (F-03..F-15). Direct table writes are limited by RLS to staff and,
-/// for hints/hint_items, to games still in draft/scheduled.
+/// Host / co-host operations (F-03..F-15). The server checks who may change what (staff only; hints
+/// and blocks only while the game allows it).
 extension API {
     static func createGame(_ form: GameForm) async throws -> Game {
-        if GoAPI.isEnabled { return try await GoAPI.write("POST", "/v1/games", body: GameWrite(form: form), as: Game.self) }
-        let uid = try requireUser()
-        return try await db.from("games").insert(NewGame(hostId: uid, form: form))
-            .select().single().execute().value
+        try await GoAPI.write("POST", "/v1/games", body: GameWrite(form: form), as: Game.self)
     }
 
     static func updateGame(id: UUID, form: GameForm) async throws {
-        if GoAPI.isEnabled { return try await GoAPI.write("PATCH", "/v1/games/\(id.uuidString.lowercased())", body: GameWrite(form: form)) }
-        try await db.from("games").update(GameWrite(form: form)).eq("id", value: id).execute()
+        try await GoAPI.write("PATCH", "/v1/games/\(id.uuidString.lowercased())", body: GameWrite(form: form))
     }
 
-    /// Only drafts can be deleted (RLS games_delete).
+    /// Only drafts can be deleted (by their host).
     static func deleteDraftGame(id: UUID) async throws {
-        if GoAPI.isEnabled { return try await GoAPI.write("DELETE", "/v1/games/\(id.uuidString.lowercased())") }
-        try await db.from("games").delete().eq("id", value: id).execute()
+        try await GoAPI.write("DELETE", "/v1/games/\(id.uuidString.lowercased())")
     }
 
     static func startGame(id: UUID) async throws {
-        if GoAPI.isEnabled { return try await GoAPI.write("POST", "/v1/games/\(id.uuidString.lowercased())/start") }
-        try await db.rpc("start_game", params: ["p_game_id": id]).execute()
+        try await GoAPI.write("POST", "/v1/games/\(id.uuidString.lowercased())/start")
     }
 
     static func scheduleGame(id: UUID, at date: Date) async throws {
-        if GoAPI.isEnabled {
-            struct B: Encodable { let startsAt: Date }
-            return try await GoAPI.write("POST", "/v1/games/\(id.uuidString.lowercased())/schedule", body: B(startsAt: date))
-        }
-        struct P: Encodable { let pGameId: UUID; let pStartsAt: Date }
-        try await db.rpc("schedule_game", params: P(pGameId: id, pStartsAt: date)).execute()
+        struct B: Encodable { let startsAt: Date }
+        try await GoAPI.write("POST", "/v1/games/\(id.uuidString.lowercased())/schedule", body: B(startsAt: date))
     }
 
     static func cancelGame(id: UUID) async throws {
-        if GoAPI.isEnabled { return try await GoAPI.write("POST", "/v1/games/\(id.uuidString.lowercased())/cancel") }
-        try await db.rpc("cancel_game", params: ["p_game_id": id]).execute()
+        try await GoAPI.write("POST", "/v1/games/\(id.uuidString.lowercased())/cancel")
     }
 
     static func setRole(gameId: UUID, userId: UUID, role: ParticipantRole) async throws {
-        if GoAPI.isEnabled { return try await GoAPI.write("PUT", "/v1/games/\(gameId.uuidString.lowercased())/participants/\(userId.uuidString.lowercased())/role", body: ["role": role.rawValue]) }
-        struct P: Encodable { let pGameId: UUID; let pUserId: UUID; let pRole: ParticipantRole }
-        try await db.rpc("set_participant_role", params: P(pGameId: gameId, pUserId: userId, pRole: role)).execute()
+        try await GoAPI.write("PUT", "/v1/games/\(gameId.uuidString.lowercased())/participants/\(userId.uuidString.lowercased())/role", body: ["role": role.rawValue])
     }
 
     // MARK: Hints
 
     static func hints(gameId: UUID) async throws -> [HostHint] {
-        if let v = try await GoAPI.tryRead({ try await GoAPI.get("/v1/games/\(gameId.uuidString.lowercased())/hints", as: [HostHint].self) }) { return v }
-        return try await db.from("hints")
-            .select("id, game_id, hint_order, title, description, prize, prize_item, answer_lat, answer_lng, activated_at, revealed_at, winner_submission_id")
-            .eq("game_id", value: gameId).order("hint_order").execute().value
+        try await GoAPI.get("/v1/games/\(gameId.uuidString.lowercased())/hints", as: [HostHint].self)
     }
 
     static func generateHintCode() async throws -> String {
-        if let v = try await GoAPI.tryRead({ try await GoAPI.get("/v1/hint-codes/new", as: String.self) }) { return v }
-        return try await db.rpc("generate_hint_code").execute().value
+        try await GoAPI.get("/v1/hint-codes/new", as: String.self)
     }
 
     static func createHint(gameId: UUID, order: Int, code: String, lat: Double, lng: Double,
                            prize: Double, prizeItem: String? = nil,
                            title: String?, description: String?) async throws -> UUID {
-        if GoAPI.isEnabled {
-            struct B: Encodable {
-                let hintOrder: Int; let code: String; let answerLat: Double; let answerLng: Double
-                let prize: Double; let prizeItem: String?; let title: String?; let description: String?
-            }
-            let item = prizeItem?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return try await GoAPI.write("POST", "/v1/games/\(gameId.uuidString.lowercased())/hints",
-                                         body: B(hintOrder: order, code: code, answerLat: lat, answerLng: lng, prize: prize,
-                                                 prizeItem: item, title: title, description: description), as: UUID.self)
+        struct B: Encodable {
+            let hintOrder: Int; let code: String; let answerLat: Double; let answerLng: Double
+            let prize: Double; let prizeItem: String?; let title: String?; let description: String?
         }
-        struct P: Encodable {
-            let pGameId: UUID; let pHintOrder: Int; let pCode: String
-            let pAnswerLat: Double; let pAnswerLng: Double; let pPrize: Double; let pTitle: String?
-            let pDescription: String?; let pPrizeItem: String?
-            func encode(to encoder: Encoder) throws {
-                var c = encoder.container(keyedBy: K.self)
-                try c.encode(pGameId, forKey: .pGameId); try c.encode(pHintOrder, forKey: .pHintOrder)
-                try c.encode(pCode, forKey: .pCode); try c.encode(pAnswerLat, forKey: .pAnswerLat)
-                try c.encode(pAnswerLng, forKey: .pAnswerLng); try c.encode(pPrize, forKey: .pPrize)
-                try c.encode(pTitle, forKey: .pTitle); try c.encode(pDescription, forKey: .pDescription)
-                // Chỉ gửi khi có: server chưa chạy 20261103001800 vẫn nhận lời gọi cũ (8 tham số).
-                try c.encodeIfPresent(pPrizeItem, forKey: .pPrizeItem)
-            }
-            enum K: String, CodingKey { case pGameId, pHintOrder, pCode, pAnswerLat, pAnswerLng, pPrize, pTitle, pDescription, pPrizeItem }
-        }
-        return try await db.rpc("create_hint", params: P(pGameId: gameId, pHintOrder: order, pCode: code,
-                                                         pAnswerLat: lat, pAnswerLng: lng, pPrize: prize,
-                                                         pTitle: title, pDescription: description,
-                                                         pPrizeItem: prizeItem?.trimmingCharacters(in: .whitespacesAndNewlines))).execute().value
+        let item = prizeItem?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await GoAPI.write("POST", "/v1/games/\(gameId.uuidString.lowercased())/hints",
+                                     body: B(hintOrder: order, code: code, answerLat: lat, answerLng: lng, prize: prize,
+                                             prizeItem: item, title: title, description: description), as: UUID.self)
     }
 
     static func setHintCode(hintId: UUID, code: String) async throws {
-        if GoAPI.isEnabled { return try await GoAPI.write("PUT", "/v1/hints/\(hintId.uuidString.lowercased())/code", body: ["code": code]) }
-        struct P: Encodable { let pHintId: UUID; let pCode: String }
-        try await db.rpc("set_hint_code", params: P(pHintId: hintId, pCode: code)).execute()
+        try await GoAPI.write("PUT", "/v1/hints/\(hintId.uuidString.lowercased())/code", body: ["code": code])
     }
 
-    /// Mã gốc của hint (bảng hint_codes, chỉ staff đọc được). nil với hint tạo trước khi app lưu mã gốc.
+    /// Mã gốc của hint (chỉ staff xem được). nil với hint tạo trước khi app lưu mã gốc.
     static func hintCode(hintId: UUID) async throws -> String? {
-        struct GoRow: Decodable { let code: String }
-        if let v = try await GoAPI.tryRead({ try await GoAPI.get("/v1/hint-codes", query: ["hint_ids": GoAPI.ids([hintId])], as: [GoRow].self).first?.code }) { return v }
-        struct Row: Decodable { let code: String }
-        let rows: [Row] = try await db.from("hint_codes").select("code").eq("hint_id", value: hintId)
-            .limit(1).execute().value
-        return rows.first?.code
+        try await hintCodes(hintIds: [hintId])[hintId]
     }
 
     /// Mã gốc của nhiều hint cùng lúc (danh sách hint ở tab Quản lý). Hint không có mã gốc thì không có trong kết quả.
     static func hintCodes(hintIds: [UUID]) async throws -> [UUID: String] {
-        struct GoRow: Decodable { let hintId: UUID; let code: String }
-        if !hintIds.isEmpty, let rows = try await GoAPI.tryRead({ try await GoAPI.get("/v1/hint-codes", query: ["hint_ids": GoAPI.ids(hintIds)], as: [GoRow].self) }) {
-            return Dictionary(rows.map { ($0.hintId, $0.code) }, uniquingKeysWith: { a, _ in a })
-        }
         guard !hintIds.isEmpty else { return [:] }
         struct Row: Decodable { let hintId: UUID; let code: String }
-        let rows: [Row] = try await db.from("hint_codes").select("hint_id,code")
-            .in("hint_id", values: hintIds.map(\.uuidString)).execute().value
+        let rows = try await GoAPI.get("/v1/hint-codes", query: ["hint_ids": GoAPI.ids(hintIds)], as: [Row].self)
         return Dictionary(rows.map { ($0.hintId, $0.code) }, uniquingKeysWith: { a, _ in a })
     }
 
@@ -145,108 +94,69 @@ extension API {
     }
 
     static func updateHint(id: UUID, patch: HintPatch) async throws {
-        if GoAPI.isEnabled { return try await GoAPI.write("PATCH", "/v1/hints/\(id.uuidString.lowercased())", body: patch) }
-        try await db.from("hints").update(patch).eq("id", value: id).execute()
+        try await GoAPI.write("PATCH", "/v1/hints/\(id.uuidString.lowercased())", body: patch)
     }
 
-    static func setHintOrder(id: UUID, order: Int) async throws {
-        try await db.from("hints").update(["hint_order": order]).eq("id", value: id).execute()
-    }
 
-    /// Swap two hints' order. `unique (game_id, hint_order)` is not deferrable, so park one on a temp slot.
+    /// Swap two hints' order (before the game starts).
     static func swapHintOrder(_ a: HostHint, _ b: HostHint) async throws {
-        if GoAPI.isEnabled { return try await GoAPI.write("POST", "/v1/hints/swap", body: ["a": a.id, "b": b.id]) }
-        let temp = 100_000 + Int.random(in: 0..<100_000)
-        try await setHintOrder(id: a.id, order: temp)
-        try await setHintOrder(id: b.id, order: a.hintOrder)
-        try await setHintOrder(id: a.id, order: b.hintOrder)
+        try await GoAPI.write("POST", "/v1/hints/swap", body: ["a": a.id, "b": b.id])
     }
 
     static func deleteHint(id: UUID) async throws {
-        if GoAPI.isEnabled { return try await GoAPI.write("DELETE", "/v1/hints/\(id.uuidString.lowercased())") }
-        try await db.from("hints").delete().eq("id", value: id).execute()
+        try await GoAPI.write("DELETE", "/v1/hints/\(id.uuidString.lowercased())")
     }
 
     // MARK: Hint items
 
     static func hintItems(hintId: UUID) async throws -> [HostHintItem] {
-        if let v = try await GoAPI.tryRead({ try await GoAPI.get("/v1/hints/\(hintId.uuidString.lowercased())/items", as: [HostHintItem].self) }) { return v }
-        return try await db.from("hint_items").select().eq("hint_id", value: hintId)
-            .order("item_order").execute().value
+        try await GoAPI.get("/v1/hints/\(hintId.uuidString.lowercased())/items", as: [HostHintItem].self)
     }
 
     static func insertHintItem(_ draft: HintItemDraft) async throws {
-        if GoAPI.isEnabled { return try await GoAPI.write("POST", "/v1/hints/\(draft.hintId.uuidString.lowercased())/items", body: draft.goFields) }
-        try await db.from("hint_items").insert(draft).execute()
+        try await GoAPI.write("POST", "/v1/hints/\(draft.hintId.uuidString.lowercased())/items", body: draft.goFields)
     }
 
     static func updateHintItem(id: UUID, draft: HintItemDraft) async throws {
-        if GoAPI.isEnabled { return try await GoAPI.write("PATCH", "/v1/hint-items/\(id.uuidString.lowercased())", body: draft.goFields) }
-        try await db.from("hint_items").update(draft).eq("id", value: id).execute()
+        try await GoAPI.write("PATCH", "/v1/hint-items/\(id.uuidString.lowercased())", body: draft.goFields)
     }
 
     static func setItemOrder(id: UUID, order: Int) async throws {
-        if GoAPI.isEnabled { return try await GoAPI.write("PATCH", "/v1/hint-items/\(id.uuidString.lowercased())", body: ["item_order": order]) }
-        try await db.from("hint_items").update(["item_order": order]).eq("id", value: id).execute()
+        try await GoAPI.write("PATCH", "/v1/hint-items/\(id.uuidString.lowercased())", body: ["item_order": order])
     }
 
     static func deleteHintItem(id: UUID) async throws {
-        if GoAPI.isEnabled { return try await GoAPI.write("DELETE", "/v1/hint-items/\(id.uuidString.lowercased())") }
-        try await db.from("hint_items").delete().eq("id", value: id).execute()
+        try await GoAPI.write("DELETE", "/v1/hint-items/\(id.uuidString.lowercased())")
     }
 
-    /// Host hint media: hint-media/{game_id}/{uuid}.jpg (RLS: staff of that game).
+    /// Host hint media: hint-media/{game_id}/{uuid}.jpg (staff of that game).
     static func uploadHintImage(gameId: UUID, data: Data) async throws -> String {
-        let path = "\(gameId.uuidString.lowercased())/\(UUID().uuidString.lowercased()).jpg"
-        _ = try await db.storage.from("hint-media")
-            .upload(path, data: data, options: FileOptions(contentType: "image/jpeg", upsert: false))
-        return path
+        let slot = try await newUpload(kind: "hint_media", gameId: gameId)
+        try await upload(slot, data: data)
+        return slot.path
     }
 
     // MARK: Live review
 
     /// Open submissions (reserved = waiting for photo, pending = waiting for review).
     static func openSubmissions(gameId: UUID) async throws -> [Submission] {
-        if let v = try await GoAPI.tryRead({ try await GoAPI.get("/v1/games/\(gameId.uuidString.lowercased())/submissions", query: ["status": "open"], as: [Submission].self) }) { return v }
-        return try await db.from("submissions").select().eq("game_id", value: gameId)
-            .in("status", values: ["reserved", "pending"])
-            .order("reserved_at").execute().value
+        try await GoAPI.get("/v1/games/\(gameId.uuidString.lowercased())/submissions", query: ["status": "open"], as: [Submission].self)
     }
 
     static func recentSubmissions(gameId: UUID, limit: Int = 30) async throws -> [Submission] {
-        if let v = try await GoAPI.tryRead({ try await GoAPI.get("/v1/games/\(gameId.uuidString.lowercased())/submissions", query: ["status": "recent", "limit": "\(limit)"], as: [Submission].self) }) { return v }
-        return try await db.from("submissions").select().eq("game_id", value: gameId)
-            .in("status", values: ["approved", "denied", "expired"])
-            .order("reserved_at", ascending: false).limit(limit).execute().value
+        try await GoAPI.get("/v1/games/\(gameId.uuidString.lowercased())/submissions", query: ["status": "recent", "limit": "\(limit)"], as: [Submission].self)
     }
 
     static func reviewSubmission(id: UUID, approve: Bool, reason: String?) async throws {
-        if GoAPI.isEnabled {
-            return try await GoAPI.write("POST", "/v1/submissions/\(id.uuidString.lowercased())/review",
-                                         body: JSONBody(fields: ["approve": .bool(approve), "reason": reason.map(JSONValue.string) ?? .null]))
-        }
-        struct P: Encodable {
-            let pSubmissionId: UUID; let pApprove: Bool; let pReason: String?
-            func encode(to encoder: Encoder) throws {
-                var c = encoder.container(keyedBy: K.self)
-                try c.encode(pSubmissionId, forKey: .pSubmissionId)
-                try c.encode(pApprove, forKey: .pApprove)
-                try c.encode(pReason, forKey: .pReason)
-            }
-            enum K: String, CodingKey { case pSubmissionId, pApprove, pReason }
-        }
-        try await db.rpc("review_submission", params: P(pSubmissionId: id, pApprove: approve, pReason: reason)).execute()
+        try await GoAPI.write("POST", "/v1/submissions/\(id.uuidString.lowercased())/review",
+                              body: JSONBody(fields: ["approve": .bool(approve), "reason": reason.map(JSONValue.string) ?? .null]))
     }
 
     static func events(gameId: UUID, limit: Int = 200) async throws -> [GameEvent] {
-        if let v = try await GoAPI.tryRead({ try await GoAPI.get("/v1/games/\(gameId.uuidString.lowercased())/events", query: ["limit": "\(limit)"], as: [GameEvent].self) }) { return v }
-        return try await db.from("game_events").select().eq("game_id", value: gameId)
-            .order("id", ascending: false).limit(limit).execute().value
+        try await GoAPI.get("/v1/games/\(gameId.uuidString.lowercased())/events", query: ["limit": "\(limit)"], as: [GameEvent].self)
     }
 
     static func setPayout(rewardId: UUID, paid: Bool) async throws {
-        if GoAPI.isEnabled { return try await GoAPI.write("PUT", "/v1/rewards/\(rewardId.uuidString.lowercased())/payout", body: ["paid": paid]) }
-        try await db.from("rewards").update(["payout_status": paid ? "paid" : "unpaid"])
-            .eq("id", value: rewardId).execute()
+        try await GoAPI.write("PUT", "/v1/rewards/\(rewardId.uuidString.lowercased())/payout", body: ["paid": paid])
     }
 }

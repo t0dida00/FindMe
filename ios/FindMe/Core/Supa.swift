@@ -1,8 +1,8 @@
 import Foundation
 import Supabase
 
-/// Single shared Supabase client. All game rules live in Postgres RPCs; the app only calls RPCs,
-/// reads RLS-allowed tables, uploads to Storage and listens to Realtime on `game_events`.
+/// Single shared Supabase client, used for sign-in only (Supabase Auth). Every game call goes to the
+/// Find Me! server (`GoAPI`), which holds the game rules.
 enum Supa {
     static let client: SupabaseClient = {
         let url = AppConfig.supabaseURL ?? URL(string: "https://not-configured.invalid")!

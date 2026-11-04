@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""So server Supabase thật với supabase/migrations: báo cột / hàm RPC mà server còn thiếu.
+"""So server Supabase thật với supabase/migrations: báo cột mà server còn thiếu, và hàm RPC cũ mà
+server vẫn còn (luật chơi đã chuyển sang server Go; 20261105000000_storage_only.sql xóa chúng).
 
 Chỉ ĐỌC, chỉ dùng anon key trong ios/Config/Secrets.xcconfig. Không cần quyền admin vì dựa vào mã lỗi:
   - GET  /rest/v1/<table>?select=<col>&limit=0 : 42703 = cột không tồn tại; 42501/200 = có.
   - POST /rest/v1/rpc/<fn> với đủ tên tham số (giá trị null): PGRST202 = không có hàm với chữ ký đó;
     42501 (anon bị thu hồi quyền) hoặc lỗi khác = hàm có.
-Mỗi mục thiếu kèm tên file migration định nghĩa nó, để biết cần chạy file nào.
+Mỗi mục kèm tên file migration cần chạy.
 
 Dùng: python3 -I supabase/tests/check_server.py   (exit 1 nếu thiếu, 2 nếu không kết nối được)
 """
@@ -61,7 +62,16 @@ def parse_migrations():
             fns[name] = (params, f.name)
     for k in dropped_cols:
         cols.pop(k, None)
-    return cols, {k: v for k, v in fns.items() if not SKIP_FN.match(k)}
+    # Hàm bị migration sau xóa (drop function / danh sách proname = any(array[…])): phải KHÔNG còn.
+    dropped_fns = {}
+    for f in MIGRATIONS:
+        sql = re.sub(r"--[^\n]*", "", f.read_text())
+        for m in re.finditer(r"proname = any \(array\[(.*?)\]\)", sql, re.S):
+            for name in re.findall(r"'(\w+)'", m.group(1)):
+                dropped_fns[name] = f.name
+    live = {k: v for k, v in fns.items() if not SKIP_FN.match(k) and k not in dropped_fns}
+    gone = {k: (fns[k][0], f) for k, f in dropped_fns.items() if k in fns and fns[k][1] < f}
+    return cols, live, gone
 
 
 def request(url, key, data=None):
@@ -83,7 +93,7 @@ def main():
         print("SKIP: không có ios/Config/Secrets.xcconfig")
         return 0
     url, key = secrets()
-    cols, fns = parse_migrations()
+    cols, fns, gone = parse_migrations()
     missing = []
     try:
         for (table, col), file in sorted(cols.items()):
@@ -94,10 +104,14 @@ def main():
             status, body = request(f"{url}/rest/v1/rpc/{name}", key, {p: None for p in params})
             if body.get("code") == "PGRST202":
                 missing.append(f"hàm   {name}({', '.join(params)})  ({file})")
+        for name, (params, file) in sorted(gone.items()):
+            status, body = request(f"{url}/rest/v1/rpc/{name}", key, {p: None for p in params})
+            if body.get("code") != "PGRST202":
+                missing.append(f"còn hàm cũ {name} (luật đã chuyển sang server Go)  ({file})")
     except urllib.error.URLError as e:
         print(f"KHÔNG KẾT NỐI ĐƯỢC server: {e}")
         return 2
-    print(f"Đã kiểm tra {len(cols)} cột, {len(fns)} hàm RPC trên {url}")
+    print(f"Đã kiểm tra {len(cols)} cột, {len(fns)} hàm RPC, {len(gone)} hàm cũ phải đã xóa trên {url}")
     if missing:
         print(f"SERVER THIẾU {len(missing)} mục (chạy các migration tương ứng, theo thứ tự tên file):")
         print("\n".join("  " + m for m in missing))
