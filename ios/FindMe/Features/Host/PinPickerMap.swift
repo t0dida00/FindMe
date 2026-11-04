@@ -10,8 +10,14 @@ struct PinPickerMap: View {
     private let pinLabel: LocalizedStringKey
     /// Khóa: chỉ xem, không chạm/kéo ghim, không kéo/phóng bản đồ (hint đang chơi hoặc đã giải).
     private let locked: Bool
-    /// Set from outside (e.g. an address was found) to move the camera there; taps don't move it.
-    private let cameraTarget: CLLocationCoordinate2D?
+    /// A request from outside to move the camera (e.g. an address was found); taps don't move it.
+    /// Each request has its own id, so asking for the same place twice still moves the camera.
+    struct CameraTarget: Equatable {
+        var coordinate: CLLocationCoordinate2D
+        var id = UUID()
+        static func == (a: Self, b: Self) -> Bool { a.id == b.id }
+    }
+    private let cameraTarget: CameraTarget?
     private let meters: CLLocationDistance
     @State private var position: MapCameraPosition
     @State private var dragOffset: CGSize = .zero
@@ -25,7 +31,7 @@ struct PinPickerMap: View {
          movePrompt: LocalizedStringKey = "Chạm hoặc kéo ghim để đổi vị trí",
          pinLabel: LocalizedStringKey = "Ghim đáp án",
          locked: Bool = false,
-         cameraTarget: CLLocationCoordinate2D? = nil) {
+         cameraTarget: CameraTarget? = nil) {
         _coordinate = coordinate
         self.locked = locked
         self.cameraTarget = cameraTarget
@@ -69,8 +75,8 @@ struct PinPickerMap: View {
         }
         .frame(height: 300)
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .onChange(of: cameraTarget.map { [$0.latitude, $0.longitude] }) { _, _ in
-            guard let c = cameraTarget else { return }
+        .onChange(of: cameraTarget) { _, target in
+            guard let c = target?.coordinate else { return }
             withAnimation {
                 position = .region(MKCoordinateRegion(center: c, latitudinalMeters: meters, longitudinalMeters: meters))
             }

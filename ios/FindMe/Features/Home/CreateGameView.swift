@@ -782,17 +782,21 @@ struct GlobeAreaSection: View {
     }
 }
 
-/// Khu vực game: ghim trên bản đồ (app tự đặt tên khu vực bằng reverse geocode trên máy) hoặc gõ
-/// địa chỉ (app tự tìm tọa độ và dời ghim tới đó). Tên chỉ gồm phường/quận/thành phố, không có số
-/// nhà; server làm tròn tọa độ ~1 km khi hiện trên Globe.
+/// Khu vực game. Ghim chỉ đổi khi host chạm/kéo trên bản đồ hoặc chọn một gợi ý; gõ chữ chỉ đổi
+/// tên. Chưa có ghim thì chữ đã gõ được tìm tọa độ một lần khi rời ô (để game công khai có khu vực).
+/// Tên tự đặt chỉ gồm phường/quận/thành phố, không có số nhà; server làm tròn tọa độ ~1 km.
 struct AddressField: View {
-    enum Lookup: Equatable { case idle, searching, naming, found, notFound }
+    enum Lookup: Equatable { case idle, searching, naming, found, notFound, noName }
+    enum Job { case name, pick, locate }
 
     @Binding var form: GameForm
     var focus: FocusState<GameFormField?>.Binding
-    @State private var geocodeTask: Task<Void, Never>?
+    @State private var task: Task<Void, Never>?
+    /// What `task` is doing while it runs (nil when idle).
+    @State private var job: Job?
     @State private var lookup: Lookup = .idle
-    @State private var cameraTarget: CLLocationCoordinate2D?
+    @State private var cameraTarget: PinPickerMap.CameraTarget?
+    @State private var suggestions = PlaceSuggestions()
 
     var body: some View {
         VStack(alignment: .leading, spacing: FM.s) {
@@ -808,29 +812,52 @@ struct AddressField: View {
                         let v = String(new.prefix(80))
                         guard v != (form.areaName ?? "") else { return }
                         form.areaName = v
-                        locate(v)
+                        task?.cancel(); job = nil; lookup = .idle
+                        suggestions.update(v, near: pin.wrappedValue)
                     }))
                     .focused(focus, equals: .areaName)
                     .submitLabel(.done)
                     .onSubmit { focus.wrappedValue = nil }
                 if lookup == .searching || lookup == .naming { ProgressView() }
             }
-            if lookup == .naming {
+            if focus.wrappedValue == .areaName, !suggestions.items.isEmpty {
+                PlaceSuggestionList(items: suggestions.items, onPick: pick)
+            }
+            switch lookup {
+            case .naming:
                 Text("Đang tìm tên địa điểm…")
                     .font(.caption).foregroundStyle(Color.fmTextSecondary)
-            } else if lookup == .notFound && form.isPublic {
+            case .noName:
+                Text("Không tìm được tên cho vị trí này. Hãy tự nhập tên khu vực.")
+                    .font(.caption).foregroundStyle(Color.fmTextSecondary)
+            case .notFound:
                 Text("Không tìm thấy địa chỉ này trên bản đồ. Thử ghi rõ hơn hoặc ghim trên bản đồ.")
                     .font(.caption).foregroundStyle(Color.fmDanger)
+            default:
+                EmptyView()
             }
         }
         .padding(.vertical, FM.xs)
-        .onChange(of: form.isPublic) { _, isPublic in
-            // Bật công khai cho game đã có địa chỉ nhưng chưa có tọa độ.
-            if isPublic, form.areaLat == nil, let name = form.areaName?.trimmedOrNil { locate(name) }
+        .onChange(of: focus.wrappedValue) { old, new in
+            guard old == .areaName, new != .areaName else { return }
+            suggestions.clear()
+            locateIfUnpinned()
         }
+        .onChange(of: form.isPublic) { _, isPublic in if isPublic { locateIfUnpinned() } }
+        .onChange(of: form.areaName == nil && form.areaLat == nil) { _, cleared in
+            // The whole form was replaced ("Bỏ nháp"): a lookup still running must not fill it.
+            // (Clearing the text by hand leaves "" rather than nil.)
+            if cleared { task?.cancel(); job = nil; lookup = .idle }
+        }
+        .onChange(of: form.areaLat != nil) { _, hasPin in
+            // A pin that arrives with loaded data (settings screen, restored draft): show it.
+            // Taps, picks and lookups set their own state first, so lookup is no longer .idle.
+            if hasPin, lookup == .idle, let c = pin.wrappedValue { cameraTarget = .init(coordinate: c) }
+        }
+        .onDisappear { task?.cancel(); job = nil }
     }
 
-    /// Ghim do người dùng đặt: lưu tọa độ rồi đặt tên khu vực từ tọa độ đó.
+    /// Ghim do host chạm/kéo: lưu tọa độ rồi đặt tên khu vực từ tọa độ đó.
     private var pin: Binding<CLLocationCoordinate2D?> {
         Binding(
             get: { form.areaLat.flatMap { lat in form.areaLng.map { CLLocationCoordinate2D(latitude: lat, longitude: $0) } } },
@@ -840,51 +867,61 @@ struct AddressField: View {
             })
     }
 
-    /// Reverse geocode (trên máy): phường · quận · thành phố.
+    /// Runs `work` as the one lookup in flight (cancelling the previous one).
+    private func run(_ kind: Job, _ work: @escaping @MainActor () async -> Void) {
+        task?.cancel()
+        job = kind
+        task = Task {
+            await work()
+            if !Task.isCancelled { job = nil }
+        }
+    }
+
+    /// Reverse geocode (trên máy) sau khi ghim.
     private func name(_ c: CLLocationCoordinate2D) {
-        geocodeTask?.cancel()
+        suggestions.clear()
         focus.wrappedValue = nil
         lookup = .naming
-        geocodeTask = Task {
+        run(.name) {
             try? await Task.sleep(for: .milliseconds(300)) // a drag ends with several updates
             guard !Task.isCancelled else { return }
-            let mark = try? await CLGeocoder()
-                .reverseGeocodeLocation(CLLocation(latitude: c.latitude, longitude: c.longitude)).first
+            let text = await PlaceSuggestions.areaName(at: c)
             guard !Task.isCancelled else { return }
-            if let mark, let text = Self.areaName(mark) { form.areaName = text }
-            lookup = .found // the pin stands even if no name was found; the host can type one
+            // The pin stands either way. "" rather than nil: nil is left out of the PATCH and the
+            // server would keep the old name (it stores a blank name as null).
+            form.areaName = text ?? ""
+            lookup = text == nil ? .noName : .found
         }
     }
 
-    static func areaName(_ m: CLPlacemark) -> String? {
-        var parts: [String] = []
-        for p in [m.subLocality, m.subAdministrativeArea ?? m.locality, m.administrativeArea] {
-            if let p = p?.trimmedOrNil, !parts.contains(p) { parts.append(p) }
-        }
-        if parts.isEmpty, let country = m.country?.trimmedOrNil { parts = [country] } // e.g. pin in open country
-        let text = parts.prefix(3).joined(separator: ", ")
-        return text.isEmpty ? nil : String(text.prefix(80))
-    }
-
-    /// Tìm tọa độ từ địa chỉ (chờ người dùng ngừng gõ 0,6 giây) và dời ghim + bản đồ tới đó.
-    private func locate(_ name: String) {
-        geocodeTask?.cancel()
-        guard let query = name.trimmedOrNil else {
-            form.areaLat = nil; form.areaLng = nil; lookup = .idle
-            return
-        }
+    /// Chọn một gợi ý: chỉ khi tìm được tọa độ mới đổi ghim và tên (tên = khu vực của chỗ đó).
+    private func pick(_ item: PlaceSuggestions.Item) {
+        suggestions.clear()
         lookup = .searching
-        geocodeTask = Task {
-            try? await Task.sleep(for: .milliseconds(600))
+        run(.pick) {
+            let place = await PlaceSuggestions.place(of: item)
             guard !Task.isCancelled else { return }
-            let mark = try? await CLGeocoder().geocodeAddressString(query).first
+            guard let place else { lookup = .notFound; return } // ghim và tên cũ giữ nguyên
+            form.areaLat = place.coordinate.latitude; form.areaLng = place.coordinate.longitude
+            form.areaName = place.areaName ?? ""
+            cameraTarget = .init(coordinate: place.coordinate)
+            lookup = place.areaName == nil ? .noName : .found
+        }
+        focus.wrappedValue = nil // after `job = .pick`: the focus-loss lookup below sees it and stays out
+    }
+
+    /// Chưa có ghim mà đã có chữ: tìm tọa độ của chữ đó một lần (gõ xong, hoặc bật công khai).
+    private func locateIfUnpinned() {
+        // A picked suggestion brings its own coordinates: don't race it with the typed text.
+        guard job != .pick, form.areaLat == nil, let query = form.areaName?.trimmedOrNil else { return }
+        lookup = .searching
+        run(.locate) {
+            let c = await PlaceSuggestions.coordinate(of: query)
             guard !Task.isCancelled else { return }
-            if let c = mark?.location?.coordinate {
-                form.areaLat = c.latitude; form.areaLng = c.longitude; lookup = .found
-                cameraTarget = c
-            } else {
-                form.areaLat = nil; form.areaLng = nil; lookup = .notFound
-            }
+            guard let c else { lookup = .notFound; return }
+            form.areaLat = c.latitude; form.areaLng = c.longitude
+            cameraTarget = .init(coordinate: c)
+            lookup = .found
         }
     }
 }

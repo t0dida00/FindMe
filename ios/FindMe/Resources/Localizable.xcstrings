@@ -4063,6 +4063,23 @@
         }
       }
     },
+    "Không tìm được tên cho vị trí này. Hãy tự nhập tên khu vực." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't find a name for this spot. Type the area name yourself."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không tìm được tên cho vị trí này. Hãy tự nhập tên khu vực."
+          }
+        }
+      }
+    },
     "Không tải được ảnh" : {
       "extractionState" : "manual",
       "localizations" : {
