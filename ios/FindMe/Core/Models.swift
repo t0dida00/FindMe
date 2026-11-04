@@ -235,6 +235,18 @@ struct HintItemDraft: Encodable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case hintId, itemOrder, type, textContent, imagePath, mapRadiusM, revealAfterMinutes
     }
+
+    /// Body for the Go API: the item fields without hint_id (it is in the URL), nulls included.
+    var goFields: JSONBody {
+        JSONBody(fields: [
+            "item_order": .number(Double(itemOrder)),
+            "type": .string(type.rawValue),
+            "text_content": textContent.map(JSONValue.string) ?? .null,
+            "image_path": imagePath.map(JSONValue.string) ?? .null,
+            "map_radius_m": mapRadiusM.map { .number(Double($0)) } ?? .null,
+            "reveal_after_minutes": revealAfterMinutes.map { .number(Double($0)) } ?? .null,
+        ])
+    }
 }
 
 struct Submission: Codable, Identifiable, Sendable, Hashable {

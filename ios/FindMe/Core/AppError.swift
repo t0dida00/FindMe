@@ -17,6 +17,10 @@ enum AppError {
                 return String(localized: "Lỗi kết nối. Vui lòng thử lại.")
             }
         }
+        if let go = error as? GoAPI.Failure {
+            if let m = message(code: go.code) { return m }
+            return goMessage(code: go.code, status: go.status)
+        }
         if let pg = error as? PostgrestError {
             if let m = message(code: pg.message) { return m }
             // e.g. 'new row … violates check constraint "games_public_needs_area"'
@@ -36,6 +40,23 @@ enum AppError {
             if let m = message(code: code) { return m }
         }
         return error.localizedDescription
+    }
+
+    /// Codes only the Go API returns (HTTP-level), by code then by status.
+    static func goMessage(code: String, status: Int) -> String {
+        switch code {
+        case "rate_limited", "too_many_streams": return String(localized: "Bạn thao tác quá nhanh, thử lại sau giây lát.")
+        case "timeout", "canceled": return String(localized: "Máy chủ phản hồi chậm, vui lòng thử lại.")
+        case "invalid_join_code": return String(localized: "Mã tham gia gồm 6 chữ hoặc số.")
+        case "forbidden": return String(localized: "Bạn không có quyền làm việc này.")
+        default: break
+        }
+        switch status {
+        case 401: return String(localized: "Bạn cần đăng nhập lại.")
+        case 404: return String(localized: "Không tìm thấy dữ liệu.")
+        case 413, 422: return String(localized: "Dữ liệu không hợp lệ.")
+        default: return String(localized: "Máy chủ gặp lỗi, vui lòng thử lại.")
+        }
     }
 
     static let knownCodes = [

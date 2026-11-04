@@ -70,6 +70,10 @@ final class GameViewModel {
     /// Subscribes to Realtime and keeps listening until the surrounding task is cancelled.
     func run() async {
         await refresh()
+        if GoAPI.isEnabled {
+            await runGoStream()
+            return
+        }
         let channel = Supa.client.channel("game-\(gameId.uuidString.lowercased())")
         let inserts = channel.postgresChange(InsertAction.self, schema: "public", table: "game_events",
                                              filter: .eq("game_id", value: gameId.uuidString.lowercased()))
@@ -102,6 +106,75 @@ final class GameViewModel {
             }
         }
         await Supa.client.removeChannel(channel)
+    }
+
+    // MARK: Go API realtime (Server-Sent Events, replaces Supabase Realtime when GO_API_URL is set)
+
+    /// Listens to GET /v1/games/{id}/stream until the task is cancelled: reconnects with
+    /// Last-Event-ID (the server replays missed events), refetches on `resync` and after a reconnect,
+    /// and stops for good when the server says we are no longer a member.
+    private func runGoStream() async {
+        let path = "/v1/games/\(gameId.uuidString.lowercased())/stream"
+        var lastID: String?
+        var backoff = 1.0
+        var connectedBefore = false
+        while !Task.isCancelled {
+            do {
+                var req = try await GoAPI.request("GET", path)
+                req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                if let lastID { req.setValue(lastID, forHTTPHeaderField: "Last-Event-ID") }
+                let (bytes, resp) = try await GoAPI.streamSession.bytes(for: req)
+                let status = (resp as? HTTPURLResponse)?.statusCode ?? 0
+                if status == 403 || status == 404 { setRealtime(false); return } // not a member
+                guard status == 200 else { throw URLError(.badServerResponse) }
+                setRealtime(true)
+                backoff = 1
+                if connectedBefore { await refresh() } // events may have been missed while offline
+                connectedBefore = true
+                // `lines` drops blank lines, so an event is complete at its `data:` line (the server
+                // always writes data last).
+                var event = "message", id: String?
+                for try await line in bytes.lines {
+                    if line.hasPrefix("id:") {
+                        id = line.dropFirst(3).trimmingCharacters(in: .whitespaces)
+                    } else if line.hasPrefix("event:") {
+                        event = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
+                    } else if line.hasPrefix("data:") {
+                        let data = String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+                        switch event {
+                        case "game_event":
+                            if let info = Self.eventInfo(json: data) { await handle(info) }
+                            if let id { lastID = id }
+                        case "resync":
+                            await refresh()
+                        case "bye":
+                            if data.contains("not_a_member") { setRealtime(false); return }
+                        default: break
+                        }
+                        event = "message"; id = nil
+                    }
+                }
+            } catch {
+                if Task.isCancelled { break }
+                print("Go stream error: \(error)")
+            }
+            setRealtime(false)
+            try? await Task.sleep(for: .seconds(backoff))
+            backoff = min(backoff * 2, 30)
+        }
+        setRealtime(false)
+    }
+
+    /// A game_events row (JSON) → the fields `handle` uses (same as the Supabase Realtime record).
+    nonisolated static func eventInfo(json: String) -> EventInfo? {
+        guard let obj = try? JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any],
+              let type = obj["type"] as? String else { return nil }
+        let p = obj["payload"] as? [String: Any] ?? [:]
+        return EventInfo(type: type,
+                         hintOrder: (p["hint_order"] as? NSNumber)?.intValue ?? (p["hint_order"] as? String).flatMap(Int.init),
+                         winnerName: p["winner_name"] as? String,
+                         userId: (p["user_id"] as? String).flatMap(UUID.init(uuidString:)),
+                         reason: p["reason"] as? String)
     }
 
     struct EventInfo: Sendable {

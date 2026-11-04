@@ -38,12 +38,21 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>FINDME_FREE_TEAM</key>
 	<string>$(FREE_TEAM)</string>
+	<key>GO_API_URL</key>
+	<string>$(GO_API_URL)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSApplicationQueriesSchemes</key>
 	<array/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Find Me! uses the camera so you can photograph the proof sheet inside the app. Photos are only sent to the host for review.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Find Me! connects to the game server on your local network (development builds).</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Your location is only shown on the map on this device and is never sent to the server.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

@@ -51,6 +51,10 @@ targets:
             CFBundleURLSchemes: [findme]
         SUPABASE_URL: "$(SUPABASE_URL)"
         SUPABASE_ANON_KEY: "$(SUPABASE_ANON_KEY)"
+        GO_API_URL: "$(GO_API_URL)"
+        NSLocalNetworkUsageDescription: "Find Me! connects to the game server on your local network (development builds)."
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         FINDME_FREE_TEAM: "$(FREE_TEAM)"
     settings:
       base:

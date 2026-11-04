@@ -14,6 +14,15 @@ enum AppConfig {
         return url
     }
 
+    /// GO_API_URL from Config/Secrets.xcconfig, e.g. http://Your-Mac.local:8080. Empty = Supabase only.
+    static var goAPIURL: URL? {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "GO_API_URL") as? String,
+              let url = URL(string: raw.trimmingCharacters(in: .whitespaces)),
+              url.scheme?.hasPrefix("http") == true, url.host != nil
+        else { return nil }
+        return url
+    }
+
     static var supabaseAnonKey: String? {
         guard let key = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_ANON_KEY") as? String,
               !key.isEmpty, !key.hasPrefix("YOUR_")

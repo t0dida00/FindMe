@@ -656,6 +656,23 @@
         }
       }
     },
+    "Bạn không có quyền làm việc này." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You're not allowed to do this."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bạn không có quyền làm việc này."
+          }
+        }
+      }
+    },
     "Bạn không phải quản trò của game này." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -669,6 +686,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bạn không phải quản trò của game này."
+          }
+        }
+      }
+    },
+    "Bạn thao tác quá nhanh, thử lại sau giây lát." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You're going a bit fast. Try again in a moment."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bạn thao tác quá nhanh, thử lại sau giây lát."
           }
         }
       }
@@ -2334,6 +2368,23 @@
         }
       }
     },
+    "Dữ liệu không hợp lệ." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid data."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dữ liệu không hợp lệ."
+          }
+        }
+      }
+    },
     "EUR" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3808,6 +3859,23 @@
         }
       }
     },
+    "Không tìm thấy dữ liệu." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not found."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Không tìm thấy dữ liệu."
+          }
+        }
+      }
+    },
     "Không tìm thấy game với mã này, hoặc game đã kết thúc." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4488,6 +4556,40 @@
         }
       }
     },
+    "Máy chủ gặp lỗi, vui lòng thử lại." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server ran into a problem. Please try again."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Máy chủ gặp lỗi, vui lòng thử lại."
+          }
+        }
+      }
+    },
+    "Máy chủ phản hồi chậm, vui lòng thử lại." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server is slow to respond. Please try again."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Máy chủ phản hồi chậm, vui lòng thử lại."
+          }
+        }
+      }
+    },
     "Mã" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4807,6 +4909,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mã tham gia"
+          }
+        }
+      }
+    },
+    "Mã tham gia gồm 6 chữ hoặc số." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A join code is 6 letters or digits."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mã tham gia gồm 6 chữ hoặc số."
           }
         }
       }
