@@ -765,7 +765,7 @@ struct GlobeAreaSection: View {
             if !form.isPublic {
                 Text("Game không hiện trên Globe. Chỉ người có mã tham gia bạn gửi mới vào được.")
             } else if !form.isAreaValid {
-                Text("Nhập địa chỉ tìm được trên bản đồ (mục Thông tin) để công khai game.")
+                Text("Ghim khu vực trên bản đồ hoặc nhập địa chỉ tìm được (mục Thông tin) để công khai game.")
                     .foregroundStyle(Color.fmDanger)
             } else {
                 if form.joinOpen == true {
@@ -782,18 +782,25 @@ struct GlobeAreaSection: View {
     }
 }
 
-/// Ô "Địa chỉ": chỉ là chữ, không cần ghim bản đồ. App tự tìm tọa độ từ chữ (geocode trên máy)
-/// để game công khai hiện trên Globe; server làm tròn ~1 km.
+/// Khu vực game: ghim trên bản đồ (app tự đặt tên khu vực bằng reverse geocode trên máy) hoặc gõ
+/// địa chỉ (app tự tìm tọa độ và dời ghim tới đó). Tên chỉ gồm phường/quận/thành phố, không có số
+/// nhà; server làm tròn tọa độ ~1 km khi hiện trên Globe.
 struct AddressField: View {
-    enum Lookup: Equatable { case idle, searching, found, notFound }
+    enum Lookup: Equatable { case idle, searching, naming, found, notFound }
 
     @Binding var form: GameForm
     var focus: FocusState<GameFormField?>.Binding
     @State private var geocodeTask: Task<Void, Never>?
     @State private var lookup: Lookup = .idle
+    @State private var cameraTarget: CLLocationCoordinate2D?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: FM.xs) {
+        VStack(alignment: .leading, spacing: FM.s) {
+            PinPickerMap(coordinate: pin, meters: 4000,
+                         emptyPrompt: "Chạm để ghim khu vực game",
+                         movePrompt: "Chạm hoặc kéo ghim để đổi khu vực",
+                         pinLabel: "Ghim khu vực game",
+                         cameraTarget: cameraTarget)
             HStack {
                 TextField("Địa chỉ (vd. Phú Nhuận, TP.HCM)", text: Binding(
                     get: { form.areaName ?? "" },
@@ -806,20 +813,60 @@ struct AddressField: View {
                     .focused(focus, equals: .areaName)
                     .submitLabel(.done)
                     .onSubmit { focus.wrappedValue = nil }
-                if lookup == .searching { ProgressView() }
+                if lookup == .searching || lookup == .naming { ProgressView() }
             }
-            if lookup == .notFound && form.isPublic {
-                Text("Không tìm thấy địa chỉ này trên bản đồ. Thử ghi rõ hơn (vd. thêm quận, thành phố).")
+            if lookup == .naming {
+                Text("Đang tìm tên địa điểm…")
+                    .font(.caption).foregroundStyle(Color.fmTextSecondary)
+            } else if lookup == .notFound && form.isPublic {
+                Text("Không tìm thấy địa chỉ này trên bản đồ. Thử ghi rõ hơn hoặc ghim trên bản đồ.")
                     .font(.caption).foregroundStyle(Color.fmDanger)
             }
         }
+        .padding(.vertical, FM.xs)
         .onChange(of: form.isPublic) { _, isPublic in
             // Bật công khai cho game đã có địa chỉ nhưng chưa có tọa độ.
             if isPublic, form.areaLat == nil, let name = form.areaName?.trimmedOrNil { locate(name) }
         }
     }
 
-    /// Tìm tọa độ từ địa chỉ (chờ người dùng ngừng gõ 0,6 giây).
+    /// Ghim do người dùng đặt: lưu tọa độ rồi đặt tên khu vực từ tọa độ đó.
+    private var pin: Binding<CLLocationCoordinate2D?> {
+        Binding(
+            get: { form.areaLat.flatMap { lat in form.areaLng.map { CLLocationCoordinate2D(latitude: lat, longitude: $0) } } },
+            set: { c in
+                form.areaLat = c?.latitude; form.areaLng = c?.longitude
+                if let c { name(c) }
+            })
+    }
+
+    /// Reverse geocode (trên máy): phường · quận · thành phố.
+    private func name(_ c: CLLocationCoordinate2D) {
+        geocodeTask?.cancel()
+        focus.wrappedValue = nil
+        lookup = .naming
+        geocodeTask = Task {
+            try? await Task.sleep(for: .milliseconds(300)) // a drag ends with several updates
+            guard !Task.isCancelled else { return }
+            let mark = try? await CLGeocoder()
+                .reverseGeocodeLocation(CLLocation(latitude: c.latitude, longitude: c.longitude)).first
+            guard !Task.isCancelled else { return }
+            if let mark, let text = Self.areaName(mark) { form.areaName = text }
+            lookup = .found // the pin stands even if no name was found; the host can type one
+        }
+    }
+
+    static func areaName(_ m: CLPlacemark) -> String? {
+        var parts: [String] = []
+        for p in [m.subLocality, m.subAdministrativeArea ?? m.locality, m.administrativeArea] {
+            if let p = p?.trimmedOrNil, !parts.contains(p) { parts.append(p) }
+        }
+        if parts.isEmpty, let country = m.country?.trimmedOrNil { parts = [country] } // e.g. pin in open country
+        let text = parts.prefix(3).joined(separator: ", ")
+        return text.isEmpty ? nil : String(text.prefix(80))
+    }
+
+    /// Tìm tọa độ từ địa chỉ (chờ người dùng ngừng gõ 0,6 giây) và dời ghim + bản đồ tới đó.
     private func locate(_ name: String) {
         geocodeTask?.cancel()
         guard let query = name.trimmedOrNil else {
@@ -834,6 +881,7 @@ struct AddressField: View {
             guard !Task.isCancelled else { return }
             if let c = mark?.location?.coordinate {
                 form.areaLat = c.latitude; form.areaLng = c.longitude; lookup = .found
+                cameraTarget = c
             } else {
                 form.areaLat = nil; form.areaLng = nil; lookup = .notFound
             }

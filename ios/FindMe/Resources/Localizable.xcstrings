@@ -1523,6 +1523,23 @@
         }
       }
     },
+    "Chạm hoặc kéo ghim để đổi khu vực" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap or drag the pin to change the area"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chạm hoặc kéo ghim để đổi khu vực"
+          }
+        }
+      }
+    },
     "Chạm hoặc kéo ghim để đổi vị trí" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1553,6 +1570,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Chạm vào sao để chấm"
+          }
+        }
+      }
+    },
+    "Chạm để ghim khu vực game" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap to pin the game area"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chạm để ghim khu vực game"
           }
         }
       }
@@ -2827,6 +2861,40 @@
         }
       }
     },
+    "Ghim khu vực game" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Game area pin"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ghim khu vực game"
+          }
+        }
+      }
+    },
+    "Ghim khu vực trên bản đồ hoặc nhập địa chỉ tìm được (mục Thông tin) để công khai game." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pin the area on the map or enter an address that can be found (in Info) to make the game public."
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ghim khu vực trên bản đồ hoặc nhập địa chỉ tìm được (mục Thông tin) để công khai game."
+          }
+        }
+      }
+    },
     "Ghim khu vực để công khai game." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3978,19 +4046,19 @@
         }
       }
     },
-    "Không tìm thấy địa chỉ này trên bản đồ. Thử ghi rõ hơn (vd. thêm quận, thành phố)." : {
+    "Không tìm thấy địa chỉ này trên bản đồ. Thử ghi rõ hơn hoặc ghim trên bản đồ." : {
       "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Couldn't find this address on the map. Try being more specific (e.g. add the district or city)."
+            "value" : "Couldn't find this address on the map. Try a more precise one or drop a pin on the map."
           }
         },
         "vi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Không tìm thấy địa chỉ này trên bản đồ. Thử ghi rõ hơn (vd. thêm quận, thành phố)."
+            "value" : "Không tìm thấy địa chỉ này trên bản đồ. Thử ghi rõ hơn hoặc ghim trên bản đồ."
           }
         }
       }
@@ -5652,23 +5720,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nhập mã tham gia gồm 6 ký tự do quản trò cung cấp."
-          }
-        }
-      }
-    },
-    "Nhập địa chỉ tìm được trên bản đồ (mục Thông tin) để công khai game." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Enter an address that can be found on the map (in Info) to make the game public."
-          }
-        },
-        "vi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Nhập địa chỉ tìm được trên bản đồ (mục Thông tin) để công khai game."
           }
         }
       }
@@ -8846,6 +8897,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Đang soi từng góc phố…"
+          }
+        }
+      }
+    },
+    "Đang tìm tên địa điểm…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Looking up the place name…"
+          }
+        },
+        "vi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Đang tìm tên địa điểm…"
           }
         }
       }

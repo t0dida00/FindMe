@@ -10,6 +10,9 @@ struct PinPickerMap: View {
     private let pinLabel: LocalizedStringKey
     /// Khóa: chỉ xem, không chạm/kéo ghim, không kéo/phóng bản đồ (hint đang chơi hoặc đã giải).
     private let locked: Bool
+    /// Set from outside (e.g. an address was found) to move the camera there; taps don't move it.
+    private let cameraTarget: CLLocationCoordinate2D?
+    private let meters: CLLocationDistance
     @State private var position: MapCameraPosition
     @State private var dragOffset: CGSize = .zero
 
@@ -21,9 +24,12 @@ struct PinPickerMap: View {
          emptyPrompt: LocalizedStringKey = "Chạm để đặt ghim đáp án",
          movePrompt: LocalizedStringKey = "Chạm hoặc kéo ghim để đổi vị trí",
          pinLabel: LocalizedStringKey = "Ghim đáp án",
-         locked: Bool = false) {
+         locked: Bool = false,
+         cameraTarget: CLLocationCoordinate2D? = nil) {
         _coordinate = coordinate
         self.locked = locked
+        self.cameraTarget = cameraTarget
+        self.meters = meters
         self.emptyPrompt = emptyPrompt
         self.movePrompt = movePrompt
         self.pinLabel = pinLabel
@@ -63,6 +69,12 @@ struct PinPickerMap: View {
         }
         .frame(height: 300)
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .onChange(of: cameraTarget.map { [$0.latitude, $0.longitude] }) { _, _ in
+            guard let c = cameraTarget else { return }
+            withAnimation {
+                position = .region(MKCoordinateRegion(center: c, latitudinalMeters: meters, longitudinalMeters: meters))
+            }
+        }
         .overlay(alignment: .bottomLeading) {
             Group {
                 if locked {
