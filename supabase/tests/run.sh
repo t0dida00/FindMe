@@ -36,7 +36,8 @@ psql -d t -v ON_ERROR_STOP=1 -q \
   -f "$DIR/../migrations/20261103001900_host_avatar.sql" \
   -f "$DIR/../migrations/20261103002000_stats_started_games.sql" \
   -f "$DIR/../migrations/20261103002100_open_join.sql" \
-  -f "$DIR/../migrations/20261103002200_open_join_closed.sql" 2>&1 | grep -v -e wal_level -e HINT || true
+  -f "$DIR/../migrations/20261103002200_open_join_closed.sql" \
+  -f "$DIR/../migrations/20261104000100_game_events_notify.sql" 2>&1 | grep -v -e wal_level -e HINT || true
 psql -d t -f "$DIR/game_flow.sql" 2>&1 | grep -v -e '^SET' -e '^INSERT' -e '^UPDATE' -e '^CREATE' -e '^GRANT' -e '^RESET' -e '^Output' -e '^$'
 # Kịch bản tạm (agent tester): EXTRA_SQL=/đường/dẫn/file.sql bash supabase/tests/run.sh
 # Chạy sau game_flow.sql trên cùng DB (người dùng 0…a/b/c đã có; 0…d đã bị xóa).
